@@ -1,53 +1,86 @@
-import sys
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton 
+import tkinter as tk
+from tkinter import messagebox
 import serial
-from pymata4 import pymata4
+import serial.tools.list_ports
 
-class MainDialog(QDialog):
-    def __init__(self):
-        super().__init__()
+# --- Configuration ---
+SERIAL_PORT = 'COM6'  # Change this to /dev/ttyUSB0 on Linux/Mac
+BAUD_RATE = 115200
+RELAY_COUNT = 16  # Now matches your full hardware set
 
-        self.setWindowTitle("Main Dialog")
-        self.setGeometry(100, 100, 300, 200)
+class RelayControlApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("ESP32S3 Relay Controller")
+        
+        # Initialize Serial Connection
+        try:
+            self.ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        except Exception as e:
+            messagebox.showerror("Connection Error", f"Could not open {SERIAL_PORT}\n{e}")
+            self.ser = None
 
-        layout = QVBoxLayout()
+        self.relay_states = [False] * RELAY_COUNT
+        self.buttons = []
 
-        self.label = QLabel("Distance:")
-        layout.addWidget(self.label)
+        self.create_widgets()
 
-        self.dist_textbox = QLineEdit(self)
-        self.dist_textbox.setText("0")
-        layout.addWidget(self.dist_textbox)
+    def create_widgets(self):
+        label = tk.Label(self.root, text="ESP32 Relay Test Panel", font=("Arial", 14, "bold"))
+        label.pack(pady=10)
 
-        self.update_button = QPushButton("Update", self)
-        self.update_button.clicked.connect(self.update_distance)
-        layout.addWidget(self.update_button)
+        # Create a grid for buttons
+        frame = tk.Frame(self.root)
+        frame.pack(padx=20, pady=20)
 
-        self.setLayout(layout)
+        for i in range(RELAY_COUNT):
+            relay_num = i + 1
+            btn = tk.Button(
+                frame, 
+                text=f"Relay {relay_num}\nOFF", 
+                width=10, 
+                height=3,
+                bg="red",
+                fg="white",
+                command=lambda n=relay_num: self.toggle_relay(n)
+            )
+            btn.grid(row=i // 4, column=i % 4, padx=5, pady=5)
+            self.buttons.append(btn)
 
-        # Initialize the Pymata4 board
-        self.board = pymata4.Pymata4()
+    def toggle_relay(self, index):
+        if not self.ser:
+            return
 
-        # Set up the ultrasonic sensor
-        self.trigger_pin = 10
-        self.echo_pin = 11
-        self.board.set_pin_mode_sonar(self.trigger_pin, self.echo_pin, self.callback)
+        # Toggle state
+        current_state = self.relay_states[index-1]
+        new_state = not current_state
+        val = 1 if new_state else 0
+        
+        # Format command: "RELAY X Y\n"
+        command = f"RELAY {index} {val}\n"
+        
+        try:
+            self.ser.write(command.encode())
+            # Wait for "OK" response from ESP32
+            response = self.ser.readline().decode().strip()
+            
+            if "OK" in response:
+                self.relay_states[index-1] = new_state
+                color = "green" if new_state else "red"
+                status = "ON" if new_state else "OFF"
+                self.buttons[index-1].config(text=f"Relay {index}\n{status}", bg=color)
+            else:
+                print(f"Error from ESP: {response}")
+        except Exception as e:
+            print(f"Failed to send command: {e}")
 
-        self.distance = 0
-
-    def callback(self, data):
-        self.distance = data[2]
-
-    def update_distance(self):
-        # Measure the distance using the ultrasonic sensor
-        self.board.sonar_read(self.trigger_pin)
-        self.dist_textbox.setText(str(self.distance))
-        print(f"Distance updated to: {self.distance}")
+    def on_closing(self):
+        if self.ser:
+            self.ser.close()
+        self.root.destroy()
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    dialog = MainDialog()
-    dialog.show()
-    sys.exit(app.exec_())
-
-
+    root = tk.Tk()
+    app = RelayControlApp(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    root.mainloop()
