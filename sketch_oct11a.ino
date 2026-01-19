@@ -1,47 +1,46 @@
-#define RELAY_1 4
-#define RELAY_2 5
-#define RELAY_3 6
-#define RELAY_4 7
-#define RELAY_5 15
-#define RELAY_6 16
-#define RELAY_7 17
-#define RELAY_8 18
-#define TRIG_PIN 13 // SR04
-#define ECHO_PIN 14 // SR04
-#define LDR_PIN 12  // MH光敏（類比腳）
+// Define pins for all 17 relays as per your list
+const int relayPins[] = {4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
+const int NUM_RELAYS = sizeof(relayPins) / sizeof(relayPins[0]);
 
 void setup() {
   Serial.begin(115200);
-  for (int i = RELAY_1; i <= RELAY_8; i++) {
-    pinMode(i, OUTPUT);
-    digitalWrite(i, LOW);
+
+  // Initialize all Relay pins using the array
+  for (int i = 0; i < NUM_RELAYS; i++) {
+    pinMode(relayPins[i], OUTPUT);
+    digitalWrite(relayPins[i], LOW); // Ensure they start OFF
   }
-  pinMode(TRIG_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
+  Serial.println("System Ready. Send: RELAY <index> <state>");
 }
 
 void loop() {
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
-    // 控制繼電器
+    cmd.trim();
+
     if (cmd.startsWith("RELAY")) {
-      int index = cmd.substring(6,7).toInt();
-      int val = cmd.substring(8,9).toInt();
-      if (index >=1 && index <=8) digitalWrite(RELAY_1 + index - 1, val);
-      Serial.println("OK");
-    }
-    // 讀SR04
-    else if (cmd == "GET_DIST") {
-      digitalWrite(TRIG_PIN, LOW); delayMicroseconds(2);
-      digitalWrite(TRIG_PIN, HIGH); delayMicroseconds(10); digitalWrite(TRIG_PIN, LOW);
-      long duration = pulseIn(ECHO_PIN, HIGH);
-      float distanceCm = duration * 0.034 / 2;
-      Serial.println(distanceCm);
-    }
-    // 讀光感
-    else if (cmd == "GET_LDR") {
-      int ldrValue = analogRead(LDR_PIN);
-      Serial.println(ldrValue);
+      // Use sscanf to safely parse multi-digit integers
+      // Format expected: "RELAY 15 1"
+      int index;
+      int val;
+      
+      // sscanf returns the number of successfully parsed variables
+      if (sscanf(cmd.c_str(), "RELAY %d %d", &index, &val) == 2) {
+        
+        // Check if index is within our valid range (1 to 16/17)
+        if (index >= 1 && index <= NUM_RELAYS) {
+          // Map index (1-based) to array (0-based)
+          digitalWrite(relayPins[index - 1], val);
+          
+          Serial.print("OK: Relay ");
+          Serial.print(index);
+          Serial.println(val == 1 ? " ON" : " OFF");
+        } else {
+          Serial.println("Error: Index out of range");
+        }
+      } else {
+        Serial.println("Error: Invalid Command Format. Use 'RELAY <num> <0/1>'");
+      }
     }
   }
 }
