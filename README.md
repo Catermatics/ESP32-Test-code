@@ -1,81 +1,73 @@
-ESP32-S3 USB Relay and Sensor Control System
-This project enables you to control an 8-channel relay module and read data from both an HC-SR04 ultrasonic distance sensor and an MH series light sensor (LDR) via a graphical user interface (GUI) on your computer. Communication between the PC and the ESP32-S3 microcontroller is achieved through USB serial.
+ESP32S3 16-Channel Relay Control System
+This project provides a complete hardware-to-software solution for controlling up to 16 relays using an ESP32S3. It includes an Arduino-based firmware and a modern Python-based Graphical User Interface (GUI) for desktop control.
 
-Features
-Control up to 8 relays for switching devices on/off from your PC.
+🚀 Features
+Multi-Channel Control: Supports individual control of 16 different relay channels.
 
-Measure distance with an HC-SR04 (ultrasonic) sensor.
+Serial Communication: Uses a robust command-parsing protocol via USB-Serial.
 
-Monitor ambient light conditions using an MH or LDR analog light sensor.
+Cross-Platform UI: Python/Tkinter GUI that works on Windows, macOS, and Linux.
 
-Simple GUI-based interface for easy control and monitoring.
+Real-time Feedback: The UI updates only after receiving a confirmation ("OK") from the hardware.
 
-Hardware Requirements
-ESP32-S3 development board
+🛠 Hardware Setup
+Components
+ESP32S3 Development Board.
 
-8-channel relay module
+16-Channel Relay Module (Active Low or Active High).
 
-HC-SR04 ultrasonic distance sensor
+External 5V/12V Power Supply (Crucial: Do not power 16 relays directly from the ESP32).
 
-MH-series analog light sensor (LDR) or similar
+Pin Mapping
+The firmware uses the following GPIO pins on the ESP32S3: | Relay | GPIO | Relay | GPIO | | :--- | :--- | :--- | :--- | | 1-4 | 4, 5, 6, 7 | 9-12 | 12, 13, 14, 15 | | 5-8 | 8, 9, 10, 11 | 13-16 | 16, 17, 18, 19 |
 
-Connecting wires, breadboard or PCB
+💻 Software Installation
+1. ESP32 Firmware
+Open the esp32_relay_control.ino file in the Arduino IDE.
 
-Computer with USB port
+Ensure you have the ESP32 board support installed.
 
-Circuit Connections
-Relay IN1–IN8: Connect to GPIO4–GPIO7 and GPIO 15 to GPIO18 on ESP32-S3.
+Select ESP32S3 Dev Module from the Boards menu.
 
-HC-SR04 Trig: Connect to GPIO13.
+Upload the code to your device.
 
-HC-SR04 Echo: Connect to GPIO14.
+2. Python UI Setup
+Install Python 3.x.
 
-Light sensor (LDR): Connect the analog output to GPIO12.
+Install the required pyserial library:
 
-Ensure proper GND and VCC connections for all components.
+Bash
 
-ESP32-S3 Firmware
-The ESP32-S3 firmware listens for serial commands. It controls the relay channels and returns readings from the ultrasonic and light sensors on demand.
+pip install pyserial
+Update the SERIAL_PORT variable in the Python script (e.g., COM3 for Windows or /dev/ttyUSB0 for Linux).
 
-Supported serial commands:
+Run the application:
 
-RELAY <channel> <0/1>: Set relay (e.g., RELAY 1 1 turns on relay 1).
+Bash
 
-GET_DIST: Responds with the measured distance in centimeters.
+python relay_gui.py
+🛰 Communication Protocol
+The system communicates via Serial at 115200 Baud.
 
-GET_LDR: Responds with the current light sensor value (ADC reading).
+Command Format: RELAY <index> <state>
 
-The example firmware is written for the Arduino framework. See the esp32_s3_relay_sensor.ino file for the complete code.
+index: 1 to 16
 
-Python GUI Application
-A Python application (example uses Tkinter) communicates with the ESP32-S3 over USB serial. It provides:
+state: 1 (ON) or 0 (OFF)
 
-Buttons to toggle each relay ON/OFF
+Example: Sending RELAY 15 1 will turn on the 15th relay.
 
-Live display of ultrasonic distance and light sensor readings
+Response: The ESP32 will return OK: Relay 15 ON upon success.
 
-Install dependencies via pip:
+Here is the step-by-step breakdown of how that communication works.1. The Physical ConnectionWhen you plug your ESP32S3 into your computer, an onboard chip (like the CP2102 or CH340) converts the USB signals into Serial data. Windows assigns this a "COM Port" (e.g., COM3), while Linux/Mac assigns it a device path (e.g., /dev/ttyUSB0).2. The Python Protocol (pySerial)The Python script uses the pyserial library to open this port. The "magic" happens in three steps:Encoding: Python strings (like "RELAY 1 1") are Unicode. The ESP32 expects raw bytes. Python must "encode" the string into bytes using command.encode().Termination: The ESP32 code uses Serial.readStringUntil('\n'). Therefore, Python must add a newline character (\n) at the end of every command so the ESP32 knows the message is finished.The Buffer: When Python calls ser.write(), the data travels through the USB cable into the ESP32's Serial buffer.Python# Simplified Logic Example
+import serial
 
-text
-pip install pyserial tk
-Edit the serial port in the script (e.g., COM3 on Windows, /dev/ttyUSB0 on Linux) to match your system.
+# 1. Open the connection
+ser = serial.Serial('COM3', 115200)
 
-Usage
-Upload the ESP32-S3 firmware via Arduino IDE.
+# 2. Format the instruction
+command = "RELAY 5 1\n" 
 
-Connect all hardware as described above.
-
-Run the Python GUI application on your PC.
-
-Use the GUI to control relays and view sensor data in real time.
-
-Notes
-Pin numbers and serial port names may vary—adjust accordingly in the source code.
-
-The project can be expanded to include other sensor types or more channels.
-
-Ensure electrical isolation and proper relay module powering for safe operation.
-
-For Linux/MacOS, you may need additional permissions to access serial ports.
-
-This documentation provides all necessary steps and information for setting up and running the ESP32-S3 USB relay & sensor control system, based on your requirements and prior provided code.​
+# 3. Send as bytes
+ser.write(command.encode('utf-8')) 
+3. The ESP32 Reception LogicInside the void loop(), the ESP32 is constantly checking Serial.available().Detection: When bytes arrive in the buffer, Serial.available() becomes true.Reading: Serial.readStringUntil('\n') pulls the bytes out and reconstructs the string.Parsing: The sscanf function scans the string for the pattern "RELAY", followed by two integers.Action: The ESP32 then maps the "Relay Number" (1–16) to the actual physical GPIO Pin using the array we created and uses digitalWrite() to flip the electronic switch.4. The Feedback Loop (The "Handshake")To ensure the UI doesn't get out of sync with the hardware, the Python script waits for a response:ESP32: After switching the pin, it sends back Serial.println("OK").Python: Uses ser.readline() to wait for that "OK". Once received, the Python GUI updates the button color from Red to Green.Summary TableStepActionPython SideESP32 Side1User clicks buttontoggle_relay(5)Waiting...2Send Dataser.write(b"RELAY 5 1\n")Serial.readStringUntil()3ProcessWaiting for response...digitalWrite(GPIO8, HIGH)4Acknowledgeser.readline()Serial.println("OK")5Update UIButton turns GreenReady for next command
